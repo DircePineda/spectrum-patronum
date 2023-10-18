@@ -1,0 +1,61 @@
+# COSMIC RAY REMOVAL
+# Detect cosmic ray spikes based on second difference exceeding predefined threshold & replace spikes with linearly interpolated values from neighboring data points
+import pandas as pd
+import numpy as np
+
+file_path = '/kaggle/input/malaria/malaria.csv'
+data = pd.read_csv(file_path)
+
+# Actual column names
+wave_column = '#Wave'
+intensity_column = '#Intensity'
+
+# Calculate the second difference of the spectrum to accentuate sharp spikes
+first_difference = np.diff(data[intensity_column], n=1)
+second_difference = np.diff(first_difference, n=1)
+
+# Identify points where the second difference exceeds a predefined threshold, indicating a cosmic ray spike
+threshold = 0.2
+cosmic_ray_indices = np.where(second_difference > threshold)[0]
+
+# Replace these points using linear interpolation from neighboring data points
+for index in cosmic_ray_indices:
+    if index - 1 >= 0 and index + 1 < len(data): # index must be within a valid range
+        left_neighbor = data.at[index - 1, intensity_column]
+        right_neighbor = data.at[index + 1, intensity_column]
+
+        # Linear interpolation to replace cosmic ray spike
+        interpolated_value = left_neighbor + (right_neighbor - left_neighbor) / 2
+        data.at[index, intensity_column] = interpolated_value
+        
+# PLOT SPECTRA COSMIC RAYS
+# Create a figure & axis for plot
+fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+
+# Plot original data
+ax[0].plot(data['#Wave'], data['#Intensity'], label='Original Data', color='b')
+
+# Plot data after cosmic ray removal
+ax[1].plot(data['#Wave'], data['#Intensity'], label='Original Data', color='g')
+
+# Identify points where the second difference exceeds a predefined threshold, indicating a cosmic ray spike
+threshold = 0.2
+cosmic_ray_indices = np.where(second_difference > threshold)[0]
+
+# Highlight cosmic ray points in red in the second plot
+ax[1].scatter(data.iloc[cosmic_ray_indices]['#Wave'], data.iloc[cosmic_ray_indices]['#Intensity'], color='r', marker='x', label='Cosmic Ray')
+    
+# Set plot titles & labels
+ax[0].set_title('Original Data')
+ax[0].set_xlabel('Wavelength')
+ax[0].set_ylabel('Intensity')
+ax[0].legend()
+
+ax[1].set_title('Data After Cosmic Ray Removal')
+ax[1].set_xlabel('Wavelength')
+ax[1].set_ylabel('Intensity')
+ax[1].legend()
+
+# Show plots
+plt.tight_layout()
+plt.show()
