@@ -1,0 +1,31 @@
+# EXTRACT CONSECUTIVELY
+
+import pandas as pd
+
+data = pd.read_csv('/kaggle/input/malaria/malaria.csv')
+
+# Initialize variables
+spectra = []             # store individual spectra
+current_spectrum = []    # store current spectrum
+
+# Define number of spectra to extract
+num_spectra_to_extract = 6
+
+# Iterate through data
+for index, row in data.iterrows():
+    # Check if wave value indicates start of new spectrum
+    if row['#Wave'] == 1705.003906:
+        # If it is not the first spectrum, add current_spectrum to list
+        if current_spectrum:
+            spectra.append(current_spectrum)
+            current_spectrum = []  # Reset the current spectrum
+        # If is collected the desired number of spectra, break loop
+        if len(spectra) == num_spectra_to_extract:
+            break
+
+    # Append current row to current_spectrum
+    current_spectrum.append(row)
+
+# Append last spectrum
+if current_spectrum:
+    spectra.append(current_spectrum)
