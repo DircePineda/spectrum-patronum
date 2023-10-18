@@ -1,0 +1,44 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Sample data
+data = pd.read_csv('/kaggle/input/malaria/malaria.csv')
+
+# Calculate the second difference of the spectrum to accentuate sharp spikes
+first_difference = np.diff(data['#Intensity'], n=1)
+second_difference = np.diff(first_difference, n=1)
+
+# Identify points where the second difference exceeds a predefined threshold, indicating a cosmic ray spike
+threshold = 0.2
+cosmic_ray_indices = np.where(second_difference > threshold)[0]
+
+# Create a single figure with two subplots for the original data and data after cosmic ray removal
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+
+# Plot the original data in blue
+ax1.plot(data['#Wave'], data['#Intensity'], label='Original Data', color='b')
+
+# Highlight cosmic ray points in red
+ax1.scatter(data.iloc[cosmic_ray_indices]['#Wave'], data.iloc[cosmic_ray_indices]['#Intensity'], color='r', marker='x', label='Cosmic Ray')
+
+# Set plot titles & labels for the first subplot
+ax1.set_title('Original Data with Cosmic Rays Highlighted')
+ax1.set_xlabel('Wavelength')
+ax1.set_ylabel('Intensity')
+ax1.legend()
+
+# Plot the data after cosmic ray removal in green
+data_after_cosmic_removal = data.copy()
+data_after_cosmic_removal.iloc[cosmic_ray_indices, data.columns.get_loc('#Intensity')] = np.nan
+ax2.plot(data_after_cosmic_removal['#Wave'], data_after_cosmic_removal['#Intensity'], label='Data After Cosmic Ray Removal', color='g')
+
+# Set plot titles & labels for the second subplot
+ax2.set_title('Data After Cosmic Ray Removal')
+ax2.set_xlabel('Wavelength')
+ax2.set_ylabel('Intensity')
+ax2.legend()
+
+# Show the plot
+plt.tight_layout()
+plt.show()
