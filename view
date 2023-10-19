@@ -1,0 +1,4 @@
+# Load data from CSV file
+data = pd.read_csv('/kaggle/input/malaria/malaria.csv')  
+
+print(data.head())
