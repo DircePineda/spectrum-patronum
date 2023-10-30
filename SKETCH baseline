@@ -1,0 +1,565 @@
+# 1) Cosmic ray removal (one sprectrum)
+# Detect cosmic ray spikes based on second difference exceeding predefined threshold 
+# Replace spikes with linearly interpolated values from neighboring data points
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+file_path = '/kaggle/input/synthdatas/synthetic_spectra_xy6.csv'
+data = pd.read_csv(file_path)
+
+# Actual column names
+wave_column = 'Wave'
+intensity_column = 'Intensity'
+
+# Calculate second difference to accentuate sharp spikes
+first_difference = np.diff(data[intensity_column], n=1)
+second_difference = np.diff(first_difference, n=1)
+
+# Identify points where second difference exceeds a predefined threshold, indicating a cosmic ray spike
+threshold = 0.2
+cosmic_ray_indices = np.where(second_difference > threshold)[0]
+
+# Replace these points using linear interpolation from neighboring data points
+for index in cosmic_ray_indices:
+    if index - 1 >= 0 and index + 1 < len(data): # index must be within a valid range
+        left_neighbor = data.at[index - 1, intensity_column]
+        right_neighbor = data.at[index + 1, intensity_column]
+
+        # Linear interpolation to replace cosmic ray spike
+        interpolated_value = left_neighbor + (right_neighbor - left_neighbor) / 2
+        data.at[index, intensity_column] = interpolated_value
+        
+# Save DataFrame
+output_file_path = '/kaggle/working/output_spectrum6.csv'
+data.to_csv(output_file_path, index=False)
+
+# Plot original & modified spectra
+plt.figure(figsize=(12, 6))
+plt.plot(data['Wavelength'], data['Intensity'], label='Modified Spectrum', color='blue')
+plt.plot(data['Wavelength'], data['Intensity'], label='Original Spectrum', linestyle='dashed', color='red')
+plt.title('Spectrum Comparison')
+plt.xlabel('Wavelength')
+plt.ylabel('Intensity')
+plt.legend()
+plt.show()
+====================================================================================================================================================
+# 3 of 12 FAILURE!!!
+import pandas as pd
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+
+# Define the output directory
+output_directory = '/kaggle/working/'
+
+# Define the combined spectra file
+combined_spectra_file = '/kaggle/input/synthdatas/synthetic_spectra_xy6.csv'
+
+# Check if the combined spectra file exists
+if os.path.isfile(combined_spectra_file):
+    # Load data into a DataFrame
+    combined_data = pd.read_csv(combined_spectra_file)
+
+    # Define the number of spectra
+    num_spectra = 6
+
+    # Create a list to store spectra
+    spectra = []
+
+    # Split data into individual spectra
+    spectrum_data_list = np.array_split(combined_data, num_spectra)
+
+    for spectrum_data in spectrum_data_list:
+        # Access columns from DataFrame
+        wavelengths = spectrum_data['Wavelength']
+        intensities = spectrum_data['Intensity']
+
+        # Store spectrum as a tuple (wavelengths, intensities)
+        spectra.append((wavelengths, intensities))
+
+    # Create a figure with subplots to visualize original & corrected spectra for all spectra
+    fig, axs = plt.subplots(num_spectra, 2, figsize=(12, 6 * num_spectra))
+
+    # 1. Identify Baseline Regions
+    def identify_baseline_regions(spectrum, min_peak_height=0.01):
+        # Implement an algorithm to identify baseline regions in the spectrum
+        # Parameters: spectrum: Raman spectrum as a numpy array of intensity values & min_peak_height: Minimum peak height to consider a point as a peak
+        # Returns: a list of tuples specifying start & end indices of baseline regions
+
+        # Find local minima in the spectrum
+        is_peak = (spectrum < np.roll(spectrum, 1)) & (spectrum < np.roll(spectrum, -1))
+
+        baseline_regions = []
+        region_start = 0
+
+        for i in range(1, len(spectrum) - 1):
+            if is_peak[i]:
+                # If the previous region is long enough, consider it a baseline region
+                if i - region_start > 2:
+                    baseline_regions.append((region_start, i))
+                region_start = i + 1
+
+        # Check if the last region is a baseline region
+        if region_start < len(spectrum) - 1:
+            baseline_regions.append((region_start, len(spectrum) - 1))
+
+        # Filter regions based on peak height
+        baseline_regions = [region for region in baseline_regions if np.min(spectrum[region[0]:region[1] + 1]) < min_peak_height]
+
+        return baseline_regions
+
+    # Iterate over each spectrum
+    for spectrum_id, (wavelengths, intensities) in enumerate(spectra, start=1):
+        # Plot Original Spectrum
+        ax = axs[spectrum_id - 1, 0]
+        ax.plot(wavelengths, intensities, label='Original Spectrum', color='blue')
+        ax.set_title(f'Original Spectrum (Spectrum {spectrum_id})')
+        ax.set_xlabel('Wavelength')
+        ax.set_ylabel('Intensity')
+        ax.legend()
+
+        # 2. Fit Chebyshev Polynomials to Baseline Regions
+        baseline_regions = identify_baseline_regions(intensities)
+
+        for start, end in baseline_regions:
+            # Get wavelengths & intensities in the baseline region
+            baseline_wavelengths = wavelengths[start:end]
+            baseline_intensities = intensities[start:end]
+
+            # Fit Chebyshev polynomial to the baseline region
+            poly_order = 3
+            coeffs = np.polynomial.chebyshev.chebfit(baseline_wavelengths, baseline_intensities, poly_order)
+
+        # 3. Update Fitted Curve
+        # Implement an iterative loop to update the fitted polynomial to ensure it remains beneath the spectrum
+        def identify_baseline_region(index):
+            # Given an index where the fitted curve exceeds the spectrum, identify the corresponding baseline region
+            # Use baseline regions previously identified to find the one that contains the index
+            for start, end in baseline_regions:
+                if start <= index <= end:
+                    return start, end
+            return None  # Return None if no matching baseline region is found
+
+        # Set a maximum number of iterations to avoid infinite loops
+        max_iterations = 10
+
+        for iteration in range(max_iterations):
+            # Evaluate the fitted polynomial over the entire spectrum range
+            fitted_baseline = np.polynomial.chebyshev.chebval(wavelengths, coeffs)
+
+            # Check if any part of the fitted curve is above the spectrum
+            exceed_indices = np.where(fitted_baseline > intensities)[0]
+
+            if len(exceed_indices) == 0:
+                # If no part of the fitted curve exceeds the spectrum, break the loop
+                break
+
+            # Update the fitted polynomial in regions where it exceeds the spectrum
+            for index in exceed_indices:
+                # Identify the corresponding baseline region
+                baseline_region = identify_baseline_region(index)
+
+                if baseline_region is not None:
+                    start, end = baseline_region
+                    # Get wavelengths & intensities in the baseline region
+                    baseline_wavelengths = wavelengths[start:end]
+                    baseline_intensities = intensities[start:end]
+
+                    # Fit a new Chebyshev polynomial to the baseline region
+                    new_coeffs = np.polynomial.chebyshev.chebfit(baseline_wavelengths, baseline_intensities, poly_order)
+
+                    # Update coefficients where the fitted curve exceeded the spectrum
+                    coeffs[start:end] = new_coeffs[start:end]
+
+        # 4. Subtract Fitted Polynomial
+        # Evaluate the fitted polynomial over the entire spectrum range
+        fitted_baseline = np.polynomial.chebyshev.chebval(wavelengths, coeffs)
+
+        # Subtract the fitted baseline from the original spectrum to correct the baseline
+        corrected_spectrum = intensities - fitted_baseline
+
+        # Plot Corrected Spectrum
+        ax = axs[spectrum_id - 1, 1]
+        ax.plot(wavelengths, corrected_spectrum, label='Corrected Spectrum', color='red')
+        ax.set_title(f'Corrected Spectrum (Spectrum {spectrum_id})')
+        ax.set_xlabel('Wavelength')
+        ax.set_ylabel('Intensity')
+        ax.legend()
+
+        # Create a DataFrame for the corrected spectrum
+        corrected_df = pd.DataFrame({'Wavelength': wavelengths, 'Corrected_Intensity': corrected_spectrum})
+
+        # Specify the output file path
+        corrected_file_path = os.path.join(output_directory, f'corrected_baseline_spectrum{spectrum_id}.csv')
+
+        # Save the DataFrame
+        corrected_df.to_csv(corrected_file_path, index=False)
+
+    # Display subplots
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print(f"Combined spectra file not found: {combined_spectra_file}")
+/opt/conda/lib/python3.10/site-packages/numpy/polynomial/chebyshev.py:1671: RankWarning: The fit may be poorly conditioned
+  return pu._fit(chebvander, x, y, deg, rcond, full, w)
+---------------------------------------------------------------------------
+ValueError                                Traceback (most recent call last)
+File /opt/conda/lib/python3.10/site-packages/pandas/core/indexes/range.py:345, in RangeIndex.get_loc(self, key)
+    344 try:
+--> 345     return self._range.index(new_key)
+    346 except ValueError as err:
+
+ValueError: 1 is not in range
+
+The above exception was the direct cause of the following exception:
+
+KeyError                                  Traceback (most recent call last)
+Cell In[2], line 77
+     74 ax.legend()
+     76 # 2. Fit Chebyshev Polynomials to Baseline Regions
+---> 77 baseline_regions = identify_baseline_regions(intensities)
+     79 for start, end in baseline_regions:
+     80     # Get wavelengths & intensities in the baseline region
+     81     baseline_wavelengths = wavelengths[start:end]
+
+Cell In[2], line 51, in identify_baseline_regions(spectrum, min_peak_height)
+     48 region_start = 0
+     50 for i in range(1, len(spectrum) - 1):
+---> 51     if is_peak[i]:
+     52         # If the previous region is long enough, consider it a baseline region
+     53         if i - region_start > 2:
+     54             baseline_regions.append((region_start, i))
+
+File /opt/conda/lib/python3.10/site-packages/pandas/core/series.py:1007, in Series.__getitem__(self, key)
+   1004     return self._values[key]
+   1006 elif key_is_scalar:
+-> 1007     return self._get_value(key)
+   1009 if is_hashable(key):
+   1010     # Otherwise index.get_value will raise InvalidIndexError
+   1011     try:
+   1012         # For labels that don't resolve as scalars like tuples and frozensets
+
+File /opt/conda/lib/python3.10/site-packages/pandas/core/series.py:1116, in Series._get_value(self, label, takeable)
+   1113     return self._values[label]
+   1115 # Similar to Index.get_value, but we do not fall back to positional
+-> 1116 loc = self.index.get_loc(label)
+   1118 if is_integer(loc):
+   1119     return self._values[loc]
+
+File /opt/conda/lib/python3.10/site-packages/pandas/core/indexes/range.py:347, in RangeIndex.get_loc(self, key)
+    345         return self._range.index(new_key)
+    346     except ValueError as err:
+--> 347         raise KeyError(key) from err
+    348 if isinstance(key, Hashable):
+    349     raise KeyError(key)
+
+KeyError: 1
+
+====================================================================================================================================================
+# 3 of 6 PLOTS MODIFICATIONS
+import pandas as pd
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+
+# Define output directory
+output_directory = '/kaggle/working/'
+
+# Define combined spectra file
+combined_spectra_file = '/kaggle/input/synthdatas/synthetic_spectra_xy6.csv'
+
+# Check if the combined spectra file exists
+if os.path.isfile(combined_spectra_file):
+    # Load data into a DataFrame
+    combined_data = pd.read_csv(combined_spectra_file)
+
+    # Define the number of spectra
+    num_spectra = 6
+
+    # Create a list to store spectra
+    spectra = []
+
+    # Split data into individual spectra
+    spectrum_data_list = np.array_split(combined_data, num_spectra)
+
+    for spectrum_data in spectrum_data_list:
+        # Access columns from DataFrame
+        wavelengths = spectrum_data['Wavelength']
+        intensities = spectrum_data['Intensity']
+
+        # Store spectrum as a tuple (wavelengths, intensities)
+        spectra.append((wavelengths, intensities))
+
+    # Create a figure with subplots to visualize all spectra
+    fig, axs = plt.subplots(num_spectra, 2, figsize=(12, 6 * num_spectra))
+
+    for spectrum_id, spectrum_data in enumerate(spectrum_data_list, start=1):
+        wavelengths = spectrum_data['Wavelength']
+        intensities = spectrum_data['Intensity']
+
+        print(f"Spectrum {spectrum_id}:")
+        print(wavelengths)
+        print(intensities)
+
+        # Plot the original spectrum in the left subplot
+        axs[spectrum_id - 1, 0].plot(wavelengths, intensities, label="Original Spectrum")
+        axs[spectrum_id - 1, 0].set_title(f"Original Spectrum {spectrum_id}")
+        axs[spectrum_id - 1, 0].set_xlabel("Wavelength")
+        axs[spectrum_id - 1, 0].set_ylabel("Intensity")
+
+==========================================================================
+    # 1. Identify Baseline Regions
+    def identify_baseline_regions(spectrum, min_peak_height=0.01):
+        # Implement an algorithm to identify baseline regions in the spectrum
+        # Parameters: spectrum: Raman spectrum as a numpy array of intensity values & min_peak_height: Minimum peak height to consider a point as a peak
+        # Returns: a list of tuples specifying start & end indices of baseline regions
+
+        # Find local minima in the spectrum
+        is_peak = (spectrum < np.roll(spectrum, 1)) & (spectrum < np.roll(spectrum, -1))
+
+        baseline_regions = []
+        region_start = 0
+
+        for i in range(1, len(spectrum) - 1):
+            if is_peak[i]:
+                # If the previous region is long enough, consider it a baseline region
+                if i - region_start > 2:
+                    baseline_regions.append((region_start, i))
+                region_start = i + 1
+
+        # Check if the last region is a baseline region
+        if region_start < len(spectrum) - 1:
+            baseline_regions.append((region_start, len(spectrum) - 1))
+
+        # Filter regions based on peak height
+        baseline_regions = [region for region in baseline_regions if np.min(spectrum[region[0]:region[1] + 1]) < min_peak_height]
+
+        return baseline_regions
+
+    # Iterate over each spectrum
+    for spectrum_id, (wavelengths, intensities) in enumerate(spectra, start=1):
+        # Plot Original Spectrum
+        ax = axs[spectrum_id - 1, 0]
+        ax.plot(wavelengths, intensities, label='Original Spectrum', color='blue')
+        ax.set_title(f'Original Spectrum (Spectrum {spectrum_id})')
+        ax.set_xlabel('Wavelength')
+        ax.set_ylabel('Intensity')
+        ax.legend()        
+
+==========================================================================
+    # 1. Identify Baseline Regions
+    # Calculate is_peak by comparing intensity values with the neighbors (may not work well for all types of spectra) 
+    # More robust method for peak detection, such as SciPy's find_peaks
+    from scipy.signal import find_peaks
+
+    def identify_baseline_regions(spectrum, min_peak_height=0.01):
+        # Find peaks in the spectrum
+        peaks, _ = find_peaks(-spectrum, height=min_peak_height)
+
+        baseline_regions = []
+        region_start = 0
+
+        for peak in peaks:
+            if peak - region_start > 2:
+                baseline_regions.append((region_start, peak))
+            region_start = peak + 1
+
+        if region_start < len(spectrum) - 1:
+            baseline_regions.append((region_start, len(spectrum) - 1))
+
+        # Filter regions based on peak height
+        baseline_regions = [region for region in baseline_regions if np.min(spectrum[region[0]:region[1] + 1]) < min_peak_height]
+
+        return baseline_regions
+
+    # Iterate over each spectrum
+    for spectrum_id, (wavelengths, intensities) in enumerate(spectra, start=1):
+        # Plot Original Spectrum
+        ax = axs[spectrum_id - 1, 0]
+        ax.plot(wavelengths, intensities, label='Original Spectrum', color='blue')
+        ax.set_title(f'Original Spectrum (Spectrum {spectrum_id})')
+        ax.set_xlabel('Wavelength')
+        ax.set_ylabel('Intensity')
+        ax.legend()
+
+==========================================================================
+        # 2. Fit Chebyshev Polynomials to Baseline Regions
+        baseline_regions = identify_baseline_regions(intensities)
+
+        for start, end in baseline_regions:
+            # Get wavelengths & intensities in the baseline region
+            baseline_wavelengths = wavelengths[start:end]
+            baseline_intensities = intensities[start:end]
+
+            # Fit Chebyshev polynomial to the baseline region
+            poly_order = 3
+            coeffs = np.polynomial.chebyshev.chebfit(baseline_wavelengths, baseline_intensities, poly_order)
+
+==========================================================================
+        # 2. Fit Chebyshev Polynomials to Baseline Regions
+        # Add error handling to handle cases where the fit might not work as expected
+        baseline_regions = identify_baseline_regions(intensities)
+
+        for start, end in baseline_regions:
+            # Get wavelengths & intensities in the baseline region
+            baseline_wavelengths = wavelengths[start:end]
+            baseline_intensities = intensities[start:end]
+
+            # Check if the baseline region is large enough for fitting
+            if len(baseline_wavelengths) < poly_order:
+                print(f"Baseline region {start}-{end} is too small for fitting a Chebyshev polynomial of order {poly_order}")
+                continue
+
+            # Fit Chebyshev polynomial to the baseline region
+            coeffs = np.polynomial.chebyshev.chebfit(baseline_wavelengths, baseline_intensities, poly_order)
+
+==========================================================================
+        # 3. Update Fitted Curve
+        # Implement an iterative loop to update the fitted polynomial to ensure it remains beneath the spectrum
+        def identify_baseline_region(index):
+            # Given an index where the fitted curve exceeds the spectrum, identify the corresponding baseline region
+            # Use baseline regions previously identified to find the one that contains the index
+            for start, end in baseline_regions:
+                if start <= index <= end:
+                    return start, end
+            return None  # Return None if no matching baseline region is found
+
+        # Set a maximum number of iterations to avoid infinite loops
+        max_iterations = 10
+
+        for iteration in range(max_iterations):
+            # Evaluate the fitted polynomial over the entire spectrum range
+            fitted_baseline = np.polynomial.chebyshev.chebval(wavelengths, coeffs)
+
+            # Check if any part of the fitted curve is above the spectrum
+            exceed_indices = np.where(fitted_baseline > intensities)[0]
+
+            if len(exceed_indices) == 0:
+                # If no part of the fitted curve exceeds the spectrum, break the loop
+                break
+
+            # Update the fitted polynomial in regions where it exceeds the spectrum
+            for index in exceed_indices:
+                # Identify the corresponding baseline region
+                baseline_region = identify_baseline_region(index)
+
+                if baseline_region is not None:
+                    start, end = baseline_region
+                    # Get wavelengths & intensities in the baseline region
+                    baseline_wavelengths = wavelengths[start:end]
+                    baseline_intensities = intensities[start:end]
+
+                    # Fit a new Chebyshev polynomial to the baseline region
+                    new_coeffs = np.polynomial.chebyshev.chebfit(baseline_wavelengths, baseline_intensities, poly_order)
+
+                    # Update coefficients where the fitted curve exceeded the spectrum
+                    coeffs[start:end] = new_coeffs[start:end]
+
+==========================================================================
+        # 3. Update Fitted Curve (Convergence check)
+        # Convergence check & uses a threshold to determine when to break out of the loop
+        # Improving robustness of algorithm
+
+        # Implement an iterative loop to update the fitted polynomial to ensure it remains beneath the spectrum
+        def identify_baseline_region(index):
+            # Given an index where the fitted curve exceeds the spectrum, identify the corresponding baseline region
+            # Use baseline regions previously identified to find the one that contains the index
+            for start, end in baseline_regions:
+                if start <= index <= end:
+                    return start, end
+            return None  # Return None if no matching baseline region is found
+
+        # Set a maximum number of iterations to avoid infinite loops
+        max_iterations = 10
+        convergence_threshold = 0.001  # Adjust the threshold as needed
+
+        for iteration in range(max_iterations):
+            # Evaluate the fitted polynomial over the entire spectrum range
+            fitted_baseline = np.polynomial.chebyshev.chebval(wavelengths, coeffs)
+
+            # Calculate the difference between the fitted curve and the spectrum
+            difference = intensities - fitted_baseline
+
+            # Check if all differences are below the threshold
+            if all(abs(difference) < convergence_threshold):
+                # If the differences are below the threshold, break the loop
+                break
+
+            # Update the fitted polynomial in regions where it exceeds the spectrum
+            for index, diff in enumerate(difference):
+                if diff > 0:
+                    # Identify the corresponding baseline region
+                    baseline_region = identify_baseline_region(index)
+
+                    if baseline_region is not None:
+                        start, end = baseline_region
+                        # Get wavelengths & intensities in the baseline region
+                        baseline_wavelengths = wavelengths[start:end]
+                        baseline_intensities = intensities[start:end]
+
+                        # Fit a new Chebyshev polynomial to the baseline region
+                        new_coeffs = np.polynomial.chebyshev.chebfit(baseline_wavelengths, baseline_intensities, poly_order)
+
+                        # Update coefficients where the fitted curve exceeded the spectrum
+                        coeffs[start:end] = new_coeffs[start:end]
+
+==========================================================================
+   # 4. Subtract Fitted Polynomial
+        # Evaluate the fitted polynomial over the entire spectrum range
+        fitted_baseline = np.polynomial.chebyshev.chebval(wavelengths, coeffs)
+
+        # Subtract the fitted baseline from the original spectrum to correct the baseline
+        corrected_spectrum = intensities - fitted_baseline
+
+        # Plot Corrected Spectrum
+        ax = axs[spectrum_id - 1, 1]
+        ax.plot(wavelengths, corrected_spectrum, label='Corrected Spectrum', color='red')
+        ax.set_title(f'Corrected Spectrum (Spectrum {spectrum_id})')
+        ax.set_xlabel('Wavelength')
+        ax.set_ylabel('Intensity')
+        ax.legend()
+
+        # Create a DataFrame for the corrected spectrum
+        corrected_df = pd.DataFrame({'Wavelength': wavelengths, 'Corrected_Intensity': corrected_spectrum})
+
+        # Specify the output file path
+        corrected_file_path = os.path.join(output_directory, f'corrected_baseline_spectrum{spectrum_id + 1}.csv')
+
+        # Save the DataFrame
+        corrected_df.to_csv(corrected_file_path, index=False)
+
+    # Display subplots
+    plt.tight_layout()
+    plt.show()
+
+==========================================================================
+    # 4. Subtract Fitted Polynomial
+    # Evaluate the fitted polynomial over the entire spectrum range
+    fitted_baseline = np.polynomial.chebyshev.chebval(wavelengths, coeffs)
+
+    # Subtract the fitted baseline from the original spectrum to correct the baseline
+    corrected_spectrum = intensities - fitted_baseline
+
+    # Plot Corrected Spectrum
+    ax = axs[spectrum_id - 1, 1]
+    ax.plot(wavelengths, corrected_spectrum, label='Corrected Spectrum', color='red')
+    ax.set_title(f'Corrected Spectrum (Spectrum {spectrum_id})')
+    ax.set_xlabel('Wavelength')
+    ax.set_ylabel('Intensity')
+    ax.legend()
+
+    # Create a DataFrame for the corrected spectrum
+    corrected_df = pd.DataFrame({'Wavelength': wavelengths, 'Corrected_Intensity': corrected_spectrum})
+
+    # Specify the output file path
+    corrected_file_path = os.path.join(output_directory, f'corrected_baseline_spectrum{spectrum_id}.csv')
+
+    # Save the DataFrame
+    corrected_df.to_csv(corrected_file_path, index=False)
+
+# Display subplots
+plt.tight_layout()
+plt.show()
